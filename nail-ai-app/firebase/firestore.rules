@@ -1,0 +1,45 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    // Colección principal de usuarios
+    match /users/{uid} {
+      allow read: if isOwner(uid);
+
+      // Crear perfil solo por el dueño y sin permitir manipular tokens/premium directamente
+      allow create: if isOwner(uid)
+        && request.resource.data.email is string
+        && request.resource.data.tokens == 20
+        && request.resource.data.isPremium == false;
+
+      // El cliente nunca puede aumentar tokens ni marcar premium manualmente.
+      // Estos cambios deben ocurrir desde Cloud Functions con Admin SDK.
+      allow update: if isOwner(uid)
+        && request.resource.data.email == resource.data.email
+        && request.resource.data.referredBy == resource.data.referredBy
+        && request.resource.data.tokens <= resource.data.tokens
+        && request.resource.data.isPremium == resource.data.isPremium;
+
+      allow delete: if false;
+
+      // Subcolección de favoritos del usuario
+      match /favorites/{favId} {
+        allow read, write: if isOwner(uid);
+      }
+
+      // Historial de análisis
+      match /analyses/{analysisId} {
+        allow read, create: if isOwner(uid);
+        allow update, delete: if false;
+      }
+    }
+  }
+}
